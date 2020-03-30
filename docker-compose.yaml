@@ -1,0 +1,12 @@
+version: '3.5'
+services:
+  bigtable:
+    image: "shopify/bigtable-emulator"
+    ports:
+      - "9035:9035"
+  pubsub:
+    image: "messagebird/gcloud-pubsub-emulator:latest"
+    ports:
+      - "8681:8681"
+    environment:
+      - "PUBSUB_PROJECT_ID=my-project-id"
