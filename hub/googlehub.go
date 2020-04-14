@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/patrickmn/go-cache"
+	"time"
 )
 
 var data = map[string] *model.Appartement{}
@@ -14,8 +16,13 @@ type GoogleHub struct {
 	pubsub *pubsub.Client
 	bigtable *bigtable.Client
 	table *bigtable.Table
+	tableHeart *bigtable.Table
+	cache *cache.Cache
+
 }
 func (self *GoogleHub) RegisterApt(apt model.Appartement){
+	self.cache = cache.New(5*time.Second, 30*time.Second)
+
 	key := apt.Id
 	_, ok := data[key]
 	if(!ok){
@@ -28,7 +35,7 @@ func (self *GoogleHub) RegisterApt(apt model.Appartement){
 		panic("Could not create data operations client: "+ err.Error())
 	}
 	self.table = self.bigtable.Open("buzz")
-
+	self.tableHeart = self.bigtable.Open("heartbeat")
 	client, err := pubsub.NewClient(ctx, "my-project-id")
 	if err != nil {
 		panic(err)
@@ -140,7 +147,7 @@ func (self *GoogleHub) UnregisterApt(apt model.Appartement){
 	return
 }
 
-func (self *GoogleHub) BroadcastToApt(channel string, topic string, message model.Message){
+func (self *GoogleHub ) BroadcastToApt(channel string, topic string, message model.Message){
 	ctx := context.Background()
 	key := channel + topic
 	row, err := self.table.ReadRow(ctx,key )
@@ -157,4 +164,47 @@ func (self *GoogleHub) BroadcastToApt(channel string, topic string, message mode
 			})
 		}
 	}
+}
+
+func (self *GoogleHub ) Newbeat( message model.Heartbeat){
+	ctx := context.Background()
+	key := message.Channel + message.Topic
+	columnFamilyName := "beat"
+	d, _ := json.Marshal(message)
+	mut := bigtable.NewMutation()
+	t := time.Now().Add(15 * time.Second)
+	timestamp := bigtable.Time(t)
+	mut.Set(columnFamilyName,"heartbeat" + message.Key , timestamp, d)
+	if err := self.tableHeart.Apply(ctx, key, mut); err != nil {
+		fmt.Println(err)
+	}
+}
+
+
+func (self *GoogleHub ) Getbeat (channel string, topic string)(err error, data []string){
+	ctx := context.Background()
+	key := channel + topic
+	v, exist := self.cache.Get(key)
+	if exist{
+		data = v.([]string)
+	} else {
+		var row bigtable.Row
+		row, err = self.tableHeart.ReadRow(ctx,key,
+			bigtable.RowFilter(
+				bigtable.ChainFilters(
+					bigtable.TimestampRangeFilter(time.Now(), time.Now().Add(time.Second * 20)),
+					bigtable.LatestNFilter(1))),
+		)
+		i := 0
+		for _,r := range row {
+			data = make([]string, len(r))
+			for y,x := range r {
+				data[y] = string(x.Value)
+			}
+			i++
+		}
+		self.cache.Set(key,data, time.Second *5)
+	}
+
+	return
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"buzz/hub"
 	"buzz/model"
+	"encoding/json"
 	"fmt"
 	engineio "github.com/googollee/go-engine.io"
 	"github.com/googollee/go-engine.io/transport"
@@ -63,6 +64,21 @@ func main() {
 		hub.Get().BroadcastToApt(msg.Channel, msg.Topic, msg )
 		return "recv " + msg.Id
 	})
+	server.OnEvent("/", "heartbeat", func(s socketio.Conn, msg model.Heartbeat) {
+		fmt.Printf("client:%s:heartbeat %s %s \n", s.ID(), msg.Topic, msg.Channel)
+		hub.Get().Newbeat(msg)
+	})
+
+	server.OnEvent("/", "presence", func(s socketio.Conn, msg model.Subscribe) {
+		fmt.Printf("client:%s:presence %s %s \n", s.ID(), msg.Topic, msg.Channel)
+		err, data := hub.Get().Getbeat(msg.Channel, msg.Topic)
+		if(err != nil){
+			fmt.Printf("client:%s:presence:error %s %s %s\n", s.ID(), msg.Topic, msg.Channel, err.Error())
+		}
+		d, _ := json.Marshal(data)
+		s.Emit("entry-presence",d )
+	})
+
 
 
 	server.OnError("/", func(s socketio.Conn, e error) {

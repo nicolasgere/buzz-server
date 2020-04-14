@@ -12,6 +12,7 @@ require (
 	github.com/kr/pty v1.1.3 // indirect
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/gommon v0.3.0 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/rs/cors v1.7.0 // indirect
 	github.com/segmentio/ksuid v1.0.2 // indirect
 	github.com/valyala/fasttemplate v1.1.0 // indirect
