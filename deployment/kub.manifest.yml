@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buzz-server
+  labels:
+    name: buzz-server
+spec:
+  selector:
+    matchLabels:
+      name: buzz-server
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  template:
+    metadata:
+      labels:
+        name: buzz-server
+    spec:
+      containers:
+        - name: buzz-server
+          image: us.gcr.io/pre-staging-255215/descript/main
+          command:
+            [
+              'node',
+              '--max-old-space-size=4096',
+              '/app/lib/revisionBounceWorker.js',
+            ]
+          resources:
+            requests:
+              cpu: 1
+              memory: 3000Mi
+            limits:
+              cpu: 2
+              memory: 6000Mi
+          env:
+            - name: CLOUDFRONT_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudfront
+                  key: PUBLIC
+            - name: CLOUDFRONT_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudfront
+                  key: PRIVATE
+            - name: CLOUDAMQP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-amqp
+                  key: URL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: URL
+            - name: PUBNUB_PUBLISH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pubnub
+                  key: PUBLISH_KEY
+            - name: PUBNUB_SUBSCRIBE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pubnub
+                  key: PUBNUB_SUBSCRIBE_KEY
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: KEY
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: SECRET
+            - name: SEGMENT_CONFIG_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: segment
+                  key: API_TOKEN
+            - name: SEGMENT_DESCRIPT_WRITE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: segment
+                  key: WRITE_KEY
+            - name: CDN_ASSET_URL
+              value: d11euk4o0j31cp.cloudfront.net
+            - name: DATABASE_REQUIRE_SSL
+              value: 'true'
+            - name: DME_LOG_LEVEL
+              value: trace
+            - name: GST_DEBUG
+              value: '3'
+            - name: GST_DEBUG_NO_COLOR
+              value: '1'
+            - name: MAX_RABBIT_CHANNELS
+              value: '25'
+            - name: NODE_ENV
+              value: 'production'
+            - name: REVISION_BOUNCE_WORKER_CHANNEL_COUNT
+              value: '2'
+            - name: REVISION_BOUNCE_USE_WEB_MEDIA_ENGINE
+              value: 'false'
+            - name: S3_ASSETS_BUCKET
+              value: 'descript-assets-testing'
+            - name: SEGMENT_CONFIG_API_URL
+              value: 'https://platform.segmentapis.com/v1beta'
+            - name: SEGMENT_DESCRIPT_WORKSPACE_SLUG
+              value: 'descript'
+            - name: SENTRY_ENVIRONMENT
+              value: staging
+            - name: SENTRY_URL
+              value: 'https://d4341a2e18514944b9ea8bf1ec1ba5ff@sentry.io/216697'
+            - name: SERVER_LOG_FORMAT
+              value: 'json'
+            - name: WORKER_LOG_LEVEL
+              value: debug
