@@ -18,6 +18,7 @@ import (
 )
 
 func main() {
+	migrate()
 	pt := polling.Default
 	
 

@@ -30,7 +30,7 @@ func sliceContains(list []string, target string) bool {
 	return false
 }
 
-func main() {
+func migrate() {
 	ctx := context.Background()
 	adminClient, err := bigtable.NewAdminClient(ctx, "my-project-id", "my-instance")
 	if err != nil {
@@ -68,5 +68,5 @@ func main() {
 		fmt.Errorf("Could not SetGCPolicy(%s): %v \n", policy, err)
 	}
 
-	fmt.Println("DONE")
+	fmt.Println("Migration done")
 }
