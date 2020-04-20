@@ -2,6 +2,7 @@ package main
 
 import (
 	"buzz/hub"
+	"buzz/migration"
 	"buzz/model"
 	"encoding/json"
 	"fmt"
@@ -18,7 +19,7 @@ import (
 )
 
 func main() {
-	migrate()
+	migration.Migrate()
 	pt := polling.Default
 	
 

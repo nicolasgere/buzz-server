@@ -1,4 +1,4 @@
-package main
+package migration
 
 // [START bigtable_hw_imports]
 import (
@@ -30,7 +30,7 @@ func sliceContains(list []string, target string) bool {
 	return false
 }
 
-func migrate() {
+func Migrate() {
 	ctx := context.Background()
 	adminClient, err := bigtable.NewAdminClient(ctx, "my-project-id", "my-instance")
 	if err != nil {
