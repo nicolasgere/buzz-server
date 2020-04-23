@@ -12,7 +12,7 @@ import (
 
 const (
 	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
+	writeWait = 1000 * time.Second
 
 	// Time allowed to read the next pong message from the peer.
 	pongWait = 20 * time.Second
@@ -21,7 +21,7 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 5120
+	maxMessageSize = 10000
 )
 
 var (
@@ -110,13 +110,13 @@ func (c *Client) writePump() {
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+				fmt.Printf("error:send:%s %	s \n", c.id, err.Error())
 				return
 			}
 			w.Write(message)
 
 			if err := w.Close(); err != nil {
 				fmt.Println("closed")
-				return
 			}
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))

@@ -20,16 +20,6 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func serveWs(w http.ResponseWriter, r *http.Request) {
-
-	//client.hub.register <- client
-	//
-	//// Allow collection of memory referenced by the caller by doing all work in
-	//// new goroutines.
-	//go client.writePump()
-	//go client.readPump()
-}
-
 func main() {
 	migration.Migrate()
 
@@ -44,12 +34,12 @@ func main() {
 	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 		conn, err := upgrader.Upgrade(w, r, nil)
+
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		apt.RegisterClient(conn)
-		serveWs(w, r)
 	})
 	router.HandleFunc("/message/{channel}/{topic}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)

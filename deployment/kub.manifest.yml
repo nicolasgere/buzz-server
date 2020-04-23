@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: buzz-server
-          image: buzzrealtime/server:latest
+          image: buzzrealtime/server:0.0.1
           env:
             - name: PUBSUB_PROJECT_ID
               value: "my-project-id"
