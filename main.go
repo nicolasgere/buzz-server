@@ -1,113 +1,86 @@
 package main
 
 import (
-	"buzz/hub"
 	"buzz/migration"
 	"buzz/model"
-	"encoding/json"
 	"fmt"
-	engineio "github.com/googollee/go-engine.io"
-	"github.com/googollee/go-engine.io/transport"
-	"github.com/googollee/go-engine.io/transport/polling"
-	"github.com/googollee/go-engine.io/transport/websocket"
-	"github.com/googollee/go-socket.io"
+
+	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"github.com/segmentio/ksuid"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 )
 
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
+func serveWs(w http.ResponseWriter, r *http.Request) {
+
+	//client.hub.register <- client
+	//
+	//// Allow collection of memory referenced by the caller by doing all work in
+	//// new goroutines.
+	//go client.writePump()
+	//go client.readPump()
+}
+
 func main() {
 	migration.Migrate()
-	pt := polling.Default
-	
 
-	wt := websocket.Default
-	wt.CheckOrigin = func(req *http.Request) bool {
-		return true
-	}
-
-	server, err := socketio.NewServer(&engineio.Options{
-		Transports: []transport.Transport{
-			pt,
-			wt,
-		},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
 	id := ksuid.New()
 	apt := model.Appartement{
 		Id:    "apt-" + id.String(),
 		Queue: "apt-" + id.String(),
-		Server:server,
 	}
-	hub.Get().RegisterApt(apt)
+	apt.Init()
 
-
-	server.OnConnect("/", func(s socketio.Conn) error {
-		fmt.Printf("client:%s:connected \n", s.ID())
-		return nil
-	})
-	server.OnEvent("/", "subscribe", func(s socketio.Conn, msg model.Subscribe) {
-		fmt.Printf("client:%s:subscribe %s %s \n", s.ID(), msg.Topic, msg.Channel)
-		hub.Get().RegisterRoom(apt, msg.Channel, msg.Topic)
-		s.Join(msg.Channel + msg.Topic)
-	})
-	server.OnEvent("/", "unsubscribe", func(s socketio.Conn, msg model.Subscribe) {
-		fmt.Printf("client:%s:unsubscribe %s %s \n", s.ID(), msg.Topic, msg.Channel)
-		hub.Get().UnregisterRoom(apt, msg.Channel, msg.Topic)
-		s.Leave(msg.Channel + msg.Topic)
-	})
-	server.OnEvent("/", "message", func(s socketio.Conn, msg model.Message) string {
-		fmt.Printf("client:%s:publish %s %s %s \n", s.ID(), msg.Topic, msg.Channel, msg.Data)
-		msg.Id = ksuid.New().String()
-		hub.Get().BroadcastToApt(msg.Channel, msg.Topic, msg )
-		return "recv " + msg.Id
-	})
-	server.OnEvent("/", "heartbeat", func(s socketio.Conn, msg model.Heartbeat) {
-		fmt.Printf("client:%s:heartbeat %s %s \n", s.ID(), msg.Topic, msg.Channel)
-		hub.Get().Newbeat(msg)
-	})
-
-	server.OnEvent("/", "presence", func(s socketio.Conn, msg model.Subscribe) {
-		fmt.Printf("client:%s:presence %s %s \n", s.ID(), msg.Topic, msg.Channel)
-		err, data := hub.Get().Getbeat(msg.Channel, msg.Topic)
-		if(err != nil){
-			fmt.Printf("client:%s:presence:error %s %s %s\n", s.ID(), msg.Topic, msg.Channel, err.Error())
+	router := mux.NewRouter()
+	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Println(err)
+			return
 		}
-		d, _ := json.Marshal(data)
-		s.Emit("entry-presence",d )
+		apt.RegisterClient(conn)
+		serveWs(w, r)
 	})
-
-
-
-	server.OnError("/", func(s socketio.Conn, e error) {
-		fmt.Printf("client:%s:error %s \n", s.ID(), e.Error())
-		s.LeaveAll()
+	router.HandleFunc("/message/{channel}/{topic}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		channel := vars["channel"]
+		topic := vars["topic"]
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "can't read body", http.StatusBadRequest)
+		}
+		fmt.Printf("publish %s %s %s \n", channel, topic, body)
+		//message := model.Message{
+		//	Id:      ksuid.New().String(),
+		//	Topic:   topic,
+		//	Channel: channel,
+		//	Data:    string(body),
+		//}
+		////hub.Get().BroadcastToApt(message)
+		w.WriteHeader(http.StatusOK)
 	})
-	server.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		fmt.Printf("client:%s:disconnected %s \n", s.ID(), reason)
-		s.LeaveAll()
-	})
-	go server.Serve()
-	defer server.Close()
-
-	mux := http.NewServeMux()
-	mux.Handle("/socket/", server)
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000"},
-		AllowedMethods:  []string{"GET", "PUT", "OPTIONS", "POST", "DELETE"},
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "PUT", "OPTIONS", "POST", "DELETE"},
 		AllowCredentials: true,
 	})
-	handler := c.Handler(mux)
+	handler := c.Handler(router)
 	port := "8080"
 	portS := os.Getenv("port")
 
-	if(portS != ""){
+	if portS != "" {
 		port = portS
 	}
 	log.Println("Serving at localhost:" + port)
-	log.Fatal(http.ListenAndServe(":" + port, handler))
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }

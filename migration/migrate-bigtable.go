@@ -1,6 +1,5 @@
 package migration
 
-// [START bigtable_hw_imports]
 import (
 	"cloud.google.com/go/bigtable"
 	"context"
@@ -8,27 +7,6 @@ import (
 	"log"
 	"time"
 )
-
-// [END bigtable_hw_imports]
-
-// User-provided constants.
-const (
-	tableName        = "Hello-Bigtable"
-	columnFamilyName = "cf1"
-	columnName       = "greeting"
-)
-
-var greetings = []string{"Hello World!", "Hello Cloud Bigtable!", "Hello golang!"}
-
-// sliceContains reports whether the provided string is present in the given slice of strings.
-func sliceContains(list []string, target string) bool {
-	for _, s := range list {
-		if s == target {
-			return true
-		}
-	}
-	return false
-}
 
 func Migrate() {
 	ctx := context.Background()
@@ -50,7 +28,7 @@ func Migrate() {
 	columnFamilyNameBear := "beat"
 
 	if err := adminClient.CreateTable(ctx, tableHeartbeat); err != nil {
-		fmt.Printf("Could not create table %s: %v \n", tableName, err)
+		fmt.Printf("Could not create table %s: %v \n", tableHeartbeat, err)
 	}
 
 	if err := adminClient.CreateColumnFamily(ctx, tableHeartbeat, columnFamilyNameBear); err != nil {
@@ -62,11 +40,8 @@ func Migrate() {
 	if err := adminClient.SetGCPolicy(ctx, tableHeartbeat, columnFamilyNameBear, policy); err != nil {
 		 fmt.Errorf("Could not SetGCPolicy(%s): %v \n", policy, err)
 	}
-
-	policy2 := bigtable.MaxVersionsPolicy(1)
-	if err := adminClient.SetGCPolicy(ctx, tableHeartbeat, columnFamilyNameBear, policy2); err != nil {
+	if err := adminClient.SetGCPolicy(ctx, tableBuzz, columnFamilyName, policy); err != nil {
 		fmt.Errorf("Could not SetGCPolicy(%s): %v \n", policy, err)
 	}
-
 	fmt.Println("Migration done")
 }
