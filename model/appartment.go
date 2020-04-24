@@ -6,9 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"github.com/patrickmn/go-cache"
 	"github.com/segmentio/ksuid"
+	"nhooyr.io/websocket"
 	"time"
 )
 
@@ -114,7 +114,7 @@ func (self *Appartement) InitPubsub() {
 }
 
 func (self *Appartement) RegisterRoom(m Subscribe, clientId string) {
-	ctx := context.Background()
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
 	key := m.GetRowKey()
 	mut := bigtable.NewMutation()
 	t := time.Now().Add(5 * time.Minute)
@@ -126,7 +126,7 @@ func (self *Appartement) RegisterRoom(m Subscribe, clientId string) {
 	return
 }
 
-func (self *Appartement) RegisterClient(conn *websocket.Conn) {
+func (self *Appartement) RegisterClient(conn *websocket.Conn, ctx context.Context) (err error) {
 	client := &Client{
 		id:            ksuid.New().String(),
 		unregister:    self.unregister,
@@ -137,8 +137,23 @@ func (self *Appartement) RegisterClient(conn *websocket.Conn) {
 		subscriptions: map[string]bool{},
 	}
 	self.register <- client
-	go client.readPump()
-	go client.writePump()
+	chanErr := make(chan error)
+	go client.readPump(ctx, chanErr)
+	go client.writePump(ctx, chanErr)
+	go client.ping(ctx, chanErr)
+
+	fmt.Printf("%s:client:connected \n", client.id)
+	err = <-chanErr
+	self.unregister <- client.id
+	if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
+		fmt.Printf("%s:client:close:normal \n", client.id)
+		return
+	}
+	if err != nil {
+		fmt.Printf("%s:client:close:error %v \n", client.id, err.Error())
+		return
+	}
+	return
 }
 
 func (self *Appartement) ClientRunner() {
@@ -146,17 +161,17 @@ func (self *Appartement) ClientRunner() {
 	for {
 		select {
 		case id := <-self.unregister:
-			fmt.Printf("unregister:%s \n", id)
+			fmt.Printf("%s:unregister \n", id)
 			delete(self.clients, id)
 		case client := <-self.register:
-			fmt.Printf("register:%s \n", client.id)
+			fmt.Printf("%s:register \n", client.id)
 			self.clients[client.id] = client
 		}
 	}
 }
 
 func (self *Appartement) ReceiveMessage() {
-	ctx := context.Background()
+	ctxBackground := context.Background()
 
 	for {
 		select {
@@ -185,6 +200,7 @@ func (self *Appartement) ReceiveMessage() {
 				}
 			case "presence":
 				{
+					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
 					fmt.Printf("message:presence:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
 					var data []string
 					key := message.GetRowKey()
@@ -218,22 +234,23 @@ func (self *Appartement) ReceiveMessage() {
 					if err != nil {
 						fmt.Println(err)
 					}
-					_, ok := self.subscriptions[message.GetRowKey()]
+
+					val, ok := self.clients[message.client.id]
 					if ok {
-						val, ok2 := self.subscriptions[message.GetRowKey()][message.client.id]
-						if ok2 {
-							val.send <- b
-						}
+						val.send <- b
+					} else {
+						fmt.Printf("error:client unknow")
 					}
 
 				}
 			case "heartbeat":
 				{
+					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
 					fmt.Printf("message:heartbeat:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
 					key := message.GetRowKey()
 					columnFamilyName := "beat"
 					mut := bigtable.NewMutation()
-					t := time.Now().Add(3 * time.Second)
+					t := time.Now().Add(15 * time.Second)
 					timestamp := bigtable.Time(t)
 					mut.Set(columnFamilyName, "heartbeat"+message.Key, timestamp, []byte(message.Payload))
 					if err := self.tablePresence.Apply(ctx, key, mut); err != nil {
@@ -259,7 +276,7 @@ func (self *Appartement) ReceiveMessage() {
 				}
 			case "broadcast":
 				{
-					ctx := context.Background()
+					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
 					fmt.Printf("message:broadcast:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
 					key := message.GetRowKey()
 					row, err := self.table.ReadRow(ctx, key, bigtable.RowFilter(
@@ -283,7 +300,6 @@ func (self *Appartement) ReceiveMessage() {
 									Data: d,
 								})
 							}
-
 						}
 					}
 				}

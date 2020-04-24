@@ -4,21 +4,20 @@ import (
 	"buzz/migration"
 	"buzz/model"
 	"fmt"
-
 	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"github.com/segmentio/ksuid"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"nhooyr.io/websocket"
 	"os"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
+//var upgrader = websocket.Upgrader{
+//	ReadBufferSize:  1024,
+//	WriteBufferSize: 1024,
+//}
 
 func main() {
 	migration.Migrate()
@@ -32,14 +31,20 @@ func main() {
 
 	router := mux.NewRouter()
 	router.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		upgrader.CheckOrigin = func(r *http.Request) bool { return true }
-		conn, err := upgrader.Upgrade(w, r, nil)
-
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			OriginPatterns: []string{
+				"*",
+				"localhost:3000",
+			},
+			CompressionMode:      0,
+			CompressionThreshold: 0,
+		})
 		if err != nil {
-			log.Println(err)
+			fmt.Println(err.Error())
 			return
 		}
-		apt.RegisterClient(conn)
+		defer conn.Close(websocket.StatusInternalError, "the sky is falling")
+		err = apt.RegisterClient(conn, r.Context())
 	})
 	router.HandleFunc("/message/{channel}/{topic}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)

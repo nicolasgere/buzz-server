@@ -2,12 +2,13 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"nhooyr.io/websocket"
 )
 
 const (
@@ -28,11 +29,6 @@ var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
@@ -60,31 +56,57 @@ type Client struct {
 // The application runs readPump in a per-connection goroutine. The application
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
-func (c *Client) readPump() {
-	defer func() {
-		c.unregister <- c.id
-		c.conn.Close()
-	}()
+func (c *Client) readPump(ctx context.Context, chanErr chan error) {
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	var err error
 	for {
-		_, data, err := c.conn.ReadMessage()
+		var d io.Reader
+		_, d, err = c.conn.Reader(ctx)
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
-			}
 			break
 		}
-		data = bytes.TrimSpace(bytes.Replace(data, newline, space, -1))
+
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(d)
+		data1 := bytes.TrimSpace(bytes.Replace(buf.Bytes(), newline, space, -1))
 		var message MessageV2
-		err = json.Unmarshal(data, &message)
-		if err != nil {
+		errMarshal := json.Unmarshal(data1, &message)
+		if errMarshal != nil {
 			fmt.Println(err.Error())
 		}
 		message.client = c
 		c.receive <- &message
 	}
+	if err != nil {
+		chanErr <- err
+	}
+}
+
+func (c *Client) ping(ctx context.Context, chanErr chan error) {
+	ticker := time.Tick(20 * time.Second)
+	var err error
+L:
+	for {
+		select {
+		case <-ticker:
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*15)
+
+			err = c.conn.Ping(ctx)
+			if err == nil {
+				fmt.Printf("%s:client:ping:ok \n", c.id)
+			} else {
+				fmt.Printf("%s:client:ping:error \n", c.id)
+				break L
+			}
+		case <-ctx.Done():
+			break L
+		}
+
+	}
+	if err != nil {
+		chanErr <- err
+	}
+
 }
 
 // writePump pumps messages from the hub to the websocket connection.
@@ -92,39 +114,23 @@ func (c *Client) readPump() {
 // A goroutine running writePump is started for each connection. The
 // application ensures that there is at most one writer to a connection by
 // executing all writes from this goroutine.
-func (c *Client) writePump() {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		c.unregister <- c.id
-		c.conn.Close()
-	}()
+func (c *Client) writePump(ctx context.Context, chanErr chan error) {
+	var err error
+L:
 	for {
 		select {
-		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			w, err := c.conn.NextWriter(websocket.TextMessage)
+		case message := <-c.send:
+			err = c.conn.Write(ctx, websocket.MessageText, message)
 			if err != nil {
-				fmt.Printf("error:send:%s %	s \n", c.id, err.Error())
-				return
-			}
-			w.Write(message)
+				break L
 
-			if err := w.Close(); err != nil {
-				fmt.Println("closed")
 			}
-		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				fmt.Printf("error:ping:%s %s \n", c.id, err.Error())
-				return
-			}
+		case <-ctx.Done():
+			break L
 		}
+	}
+	if err != nil {
+		chanErr <- err
 	}
 }
 
