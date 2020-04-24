@@ -20,7 +20,6 @@ type Appartement struct {
 	table         *bigtable.Table
 	tablePresence *bigtable.Table
 	cache         *cache.Cache
-	hub           *Hub
 	clients       map[string]*Client
 	subscriptions map[string]map[string]*Client
 	pubsubClient  *pubsub.Client
@@ -34,7 +33,6 @@ type Appartement struct {
 func (self *Appartement) Init() {
 	self.InitBigTable()
 	self.InitPubsub()
-	self.hub = newHub()
 	self.clients = map[string]*Client{}
 	self.subscriptions = map[string]map[string]*Client{}
 	self.unregister = make(chan string)
@@ -223,7 +221,7 @@ func (self *Appartement) ReceiveMessage() {
 							}
 							i++
 						}
-						self.cache.Set(key, data, time.Second*5)
+						self.cache.Set(key, data, time.Millisecond*100)
 					}
 					x, _ := json.Marshal(data)
 					b, err := json.Marshal(MessageV2{

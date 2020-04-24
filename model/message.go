@@ -24,19 +24,6 @@ func (self *MessageV2) GetRowKey() (r string) {
 	return r
 }
 
-type Message struct {
-	Id      string `json:"id"`
-	Topic   string `json:"topic"`
-	Channel string `json:"channel"`
-	Data    string `json:"data"`
-}
-
-func (self *Message) GetRowKey() (r string) {
-	rInt := fnv1a.HashString32(self.Channel + self.Topic)
-	r = strconv.Itoa(int(rInt))
-	return r
-}
-
 type Subscribe struct {
 	Topic   string `json:"topic"`
 	Channel string `json:"channel"`
@@ -46,21 +33,4 @@ func (self *Subscribe) GetRowKey() (r string) {
 	rInt := fnv1a.HashString32(self.Channel + self.Topic)
 	r = strconv.Itoa(int(rInt))
 	return r
-}
-
-type Heartbeat struct {
-	Topic   string `json:"topic"`
-	Channel string `json:"channel"`
-	Key     string `json:"key"`
-	Data    string `json:"data"`
-}
-
-func (self *Heartbeat) GetRowKey() (r string) {
-	rInt := fnv1a.HashString32(self.Channel + self.Topic)
-	r = strconv.Itoa(int(rInt))
-	return r
-}
-
-type PresenceResponse struct {
-	Data []string `json:"data"`
 }

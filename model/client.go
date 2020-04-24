@@ -32,8 +32,6 @@ var (
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
-	hub *Hub
-
 	id string
 	// The websocket connection.
 	conn *websocket.Conn
