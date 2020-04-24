@@ -12,15 +12,6 @@ import (
 )
 
 const (
-	// Time allowed to write a message to the peer.
-	writeWait = 1000 * time.Second
-
-	// Time allowed to read the next pong message from the peer.
-	pongWait = 20 * time.Second
-
-	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
-
 	// Maximum message size allowed from peer.
 	maxMessageSize = 10000
 )
@@ -81,15 +72,15 @@ func (c *Client) readPump(ctx context.Context, chanErr chan error) {
 }
 
 func (c *Client) ping(ctx context.Context, chanErr chan error) {
-	ticker := time.Tick(20 * time.Second)
+
 	var err error
 L:
 	for {
 		select {
-		case <-ticker:
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*15)
+		case <-time.After(20 * time.Second):
+			ctxTimeout, _ := context.WithTimeout(ctx, time.Second*15)
 
-			err = c.conn.Ping(ctx)
+			err = c.conn.Ping(ctxTimeout)
 			if err == nil {
 				fmt.Printf("%s:client:ping:ok \n", c.id)
 			} else {
@@ -99,7 +90,6 @@ L:
 		case <-ctx.Done():
 			break L
 		}
-
 	}
 	if err != nil {
 		chanErr <- err

@@ -111,16 +111,14 @@ func (self *Appartement) InitPubsub() {
 	}()
 }
 
-func (self *Appartement) RegisterRoom(m Subscribe, clientId string) {
+func (self *Appartement) RegisterRoom(m Subscribe, clientId string) (err error) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
 	key := m.GetRowKey()
 	mut := bigtable.NewMutation()
 	t := time.Now().Add(5 * time.Minute)
 	timestamp := bigtable.Time(t)
 	mut.Set(columnFamilyName, self.Queue, timestamp, []byte(clientId))
-	if err := self.table.Apply(ctx, key, mut); err != nil {
-		fmt.Errorf("Apply: %v", err)
-	}
+	err = self.table.Apply(ctx, key, mut)
 	return
 }
 
@@ -190,10 +188,11 @@ func (self *Appartement) ReceiveMessage() {
 						self.subscriptions[message.GetRowKey()] = map[string]*Client{}
 						self.subscriptions[message.GetRowKey()][message.client.id] = message.client
 					}
-					self.RegisterRoom(Subscribe{
+					err := self.RegisterRoom(Subscribe{
 						Topic:   message.Target.Topic,
 						Channel: message.Target.Channel,
 					}, self.Queue)
+					fmt.Errorf("%s:subscribe:error %v \n", message.client.id, err.Error())
 
 				}
 			case "presence":
@@ -207,12 +206,16 @@ func (self *Appartement) ReceiveMessage() {
 						data = v.([]string)
 					} else {
 						var row bigtable.Row
-						row, _ = self.tablePresence.ReadRow(ctx, key,
+						row, err := self.tablePresence.ReadRow(ctx, key,
 							bigtable.RowFilter(
 								bigtable.ChainFilters(
 									bigtable.TimestampRangeFilter(time.Now(), time.Now().Add(time.Second*20)),
 									bigtable.LatestNFilter(1))),
 						)
+						if err != nil {
+							fmt.Errorf("%s:presence:error %v \n", message.client.id, err.Error())
+							continue
+						}
 						i := 0
 						for _, r := range row {
 							data = make([]string, len(r))
@@ -223,21 +226,27 @@ func (self *Appartement) ReceiveMessage() {
 						}
 						self.cache.Set(key, data, time.Millisecond*100)
 					}
-					x, _ := json.Marshal(data)
+					x, err := json.Marshal(data)
+					if err != nil {
+						fmt.Errorf("%s:presence:error %v \n", message.client.id, err.Error())
+						continue
+					}
 					b, err := json.Marshal(MessageV2{
 						Type:    "presence",
 						Target:  message.Target,
 						Payload: string(x),
 					})
 					if err != nil {
-						fmt.Println(err)
+						fmt.Errorf("%s:presence:error %v \n", message.client.id, err.Error())
+						continue
 					}
-
 					val, ok := self.clients[message.client.id]
 					if ok {
 						val.send <- b
 					} else {
-						fmt.Printf("error:client unknow")
+						if err != nil {
+							fmt.Errorf("%s:presence:client_unknown \n", message.client.id)
+						}
 					}
 
 				}
@@ -252,7 +261,8 @@ func (self *Appartement) ReceiveMessage() {
 					timestamp := bigtable.Time(t)
 					mut.Set(columnFamilyName, "heartbeat"+message.Key, timestamp, []byte(message.Payload))
 					if err := self.tablePresence.Apply(ctx, key, mut); err != nil {
-						fmt.Println(err)
+						fmt.Errorf("%s:heartbeat:error %v \n", message.client.id, err.Error())
+						continue
 					}
 				}
 			case "unsubscribe":
@@ -266,7 +276,8 @@ func (self *Appartement) ReceiveMessage() {
 					fmt.Printf("message:new:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.Payload)
 					b, err := json.Marshal(message)
 					if err != nil {
-						fmt.Println(err.Error())
+						fmt.Errorf("%s:message:error %v \n", message.client.id, err.Error())
+						continue
 					}
 					for _, e := range self.subscriptions[message.GetRowKey()] {
 						e.send <- b
@@ -282,7 +293,8 @@ func (self *Appartement) ReceiveMessage() {
 							bigtable.TimestampRangeFilter(time.Now(), time.Now().Add(time.Minute*20)),
 							bigtable.LatestNFilter(1))))
 					if err != nil {
-
+						fmt.Errorf("%s:broadcast:error %v \n", message.client.id, err.Error())
+						continue
 					}
 					for _, apt := range row {
 						for _, v := range apt {
