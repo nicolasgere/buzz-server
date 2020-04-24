@@ -192,7 +192,9 @@ func (self *Appartement) ReceiveMessage() {
 						Topic:   message.Target.Topic,
 						Channel: message.Target.Channel,
 					}, self.Queue)
-					fmt.Errorf("%s:subscribe:error %v \n", message.client.id, err.Error())
+					if err != nil {
+						fmt.Errorf("%s:subscribe:error %v \n", message.client.id, err.Error())
+					}
 
 				}
 			case "presence":
