@@ -23,21 +23,10 @@ var (
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
-	id string
-	// The websocket connection.
-	conn *websocket.Conn
-
-	// Buffered channel of outbound messages.
-	send chan []byte
-
-	// Buffered channel of inbound messages.
+	id      string
+	conn    *websocket.Conn
+	send    chan []byte
 	receive chan *MessageV2
-
-	unregister chan string
-
-	lastPing time.Time
-
-	subscriptions map[string]bool
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -62,7 +51,7 @@ func (c *Client) readPump(ctx context.Context, chanErr chan error) {
 		if errMarshal != nil {
 			fmt.Println(err.Error())
 		}
-		message.client = c
+		message.clientId = c.id
 		c.receive <- &message
 	}
 	if err != nil {

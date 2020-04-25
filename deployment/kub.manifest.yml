@@ -8,7 +8,7 @@ spec:
   selector:
     matchLabels:
       name: buzz-server
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: buzz-server
-          image: buzzrealtime/server:0.0.1
+          image: buzzrealtime/server:0.0.4
           env:
             - name: PUBSUB_PROJECT_ID
               value: "my-project-id"

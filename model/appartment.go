@@ -20,28 +20,31 @@ type Appartement struct {
 	table         *bigtable.Table
 	tablePresence *bigtable.Table
 	cache         *cache.Cache
-	clients       map[string]*Client
-	subscriptions map[string]map[string]*Client
+	clients       ClientStore
+	subscriptions SubscriptionStore
 	pubsubClient  *pubsub.Client
 	incoming      chan *MessageV2
 	direct        chan *MessageV2
-
-	unregister chan string
-	register   chan *Client
 }
 
 func (self *Appartement) Init() {
 	self.InitBigTable()
 	self.InitPubsub()
-	self.clients = map[string]*Client{}
-	self.subscriptions = map[string]map[string]*Client{}
-	self.unregister = make(chan string)
-	self.register = make(chan *Client)
+	self.clients = ClientStore{}
+	self.clients.Init()
+	self.subscriptions = SubscriptionStore{}
+	self.subscriptions.Init()
+
 	self.incoming = make(chan *MessageV2)
 	self.direct = make(chan *MessageV2)
 	self.cache = cache.New(5*time.Second, 30*time.Second)
-	go self.ClientRunner()
 	go self.ReceiveMessage()
+	go func() {
+		for {
+			m := <-self.direct
+			self.incoming <- m
+		}
+	}()
 }
 
 func (self *Appartement) InitBigTable() {
@@ -102,12 +105,7 @@ func (self *Appartement) InitPubsub() {
 		fmt.Printf("pubsub:%s:%s \n", m.Target.Channel, m.Target.Topic)
 		self.incoming <- &m
 	})
-	go func() {
-		for {
-			m := <-self.direct
-			self.incoming <- m
-		}
-	}()
+
 }
 
 func (self *Appartement) RegisterRoom(m Subscribe, clientId string) (err error) {
@@ -124,14 +122,13 @@ func (self *Appartement) RegisterRoom(m Subscribe, clientId string) (err error) 
 func (self *Appartement) RegisterClient(conn *websocket.Conn, ctx context.Context) (err error) {
 	client := &Client{
 		id:            ksuid.New().String(),
-		unregister:    self.unregister,
 		receive:       self.incoming,
 		conn:          conn,
 		send:          make(chan []byte),
 		lastPing:      time.Now(),
 		subscriptions: map[string]bool{},
 	}
-	self.register <- client
+	self.clients.Add(client)
 	chanErr := make(chan error)
 	go client.readPump(ctx, chanErr)
 	go client.writePump(ctx, chanErr)
@@ -139,7 +136,7 @@ func (self *Appartement) RegisterClient(conn *websocket.Conn, ctx context.Contex
 
 	fmt.Printf("%s:client:connected \n", client.id)
 	err = <-chanErr
-	self.unregister <- client.id
+	self.clients.Delete(client.id)
 	if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
 		fmt.Printf("%s:client:close:normal \n", client.id)
 		return
@@ -149,20 +146,6 @@ func (self *Appartement) RegisterClient(conn *websocket.Conn, ctx context.Contex
 		return
 	}
 	return
-}
-
-func (self *Appartement) ClientRunner() {
-
-	for {
-		select {
-		case id := <-self.unregister:
-			fmt.Printf("%s:unregister \n", id)
-			delete(self.clients, id)
-		case client := <-self.register:
-			fmt.Printf("%s:register \n", client.id)
-			self.clients[client.id] = client
-		}
-	}
 }
 
 func (self *Appartement) ReceiveMessage() {
@@ -177,28 +160,21 @@ func (self *Appartement) ReceiveMessage() {
 					if message.Target.Topic == "" || message.Target.Channel == "" {
 						continue
 					}
-					fmt.Printf("message:subscribe:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
-					message.client.subscriptions[message.GetRowKey()] = true
-					val, ok := self.subscriptions[message.GetRowKey()]
-					if ok {
-						val[message.client.id] = message.client
-					} else {
-						self.subscriptions[message.GetRowKey()] = map[string]*Client{}
-						self.subscriptions[message.GetRowKey()][message.client.id] = message.client
-					}
+					fmt.Printf("message:subscribe:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.clientId)
+					self.subscriptions.Add(message.GetRowKey(), message.clientId)
 					err := self.RegisterRoom(Subscribe{
 						Topic:   message.Target.Topic,
 						Channel: message.Target.Channel,
 					}, self.Queue)
 					if err != nil {
-						fmt.Errorf("%s:subscribe:error %v \n", message.client.id, err.Error())
+						fmt.Errorf("%s:subscribe:error %v \n", message.clientId, err.Error())
 					}
 
 				}
 			case "presence":
 				{
 					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
-					fmt.Printf("message:presence:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
+					fmt.Printf("message:presence:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.clientId)
 					data := []string{}
 					key := message.GetRowKey()
 					v, exist := self.cache.Get(key)
@@ -213,7 +189,7 @@ func (self *Appartement) ReceiveMessage() {
 									bigtable.LatestNFilter(1))),
 						)
 						if err != nil {
-							fmt.Errorf("%s:presence:error %v \n", message.client.id, err.Error())
+							fmt.Errorf("%s:presence:error %v \n", message.clientId, err.Error())
 							continue
 						}
 						i := 0
@@ -228,7 +204,7 @@ func (self *Appartement) ReceiveMessage() {
 					}
 					x, err := json.Marshal(data)
 					if err != nil {
-						fmt.Errorf("%s:presence:error %v \n", message.client.id, err.Error())
+						fmt.Errorf("%s:presence:error %v \n", message.clientId, err.Error())
 						continue
 					}
 					b, err := json.Marshal(MessageV2{
@@ -237,15 +213,16 @@ func (self *Appartement) ReceiveMessage() {
 						Payload: string(x),
 					})
 					if err != nil {
-						fmt.Errorf("%s:presence:error %v \n", message.client.id, err.Error())
+						fmt.Errorf("%s:presence:error %v \n", message.clientId, err.Error())
 						continue
 					}
-					val, ok := self.clients[message.client.id]
-					if ok {
-						val.send <- b
+
+					client := self.clients.Get(message.clientId)
+					if client != nil {
+						client.send <- b
 					} else {
 						if err != nil {
-							fmt.Errorf("%s:presence:client_unknown \n", message.client.id)
+							fmt.Errorf("%s:presence:client_unknown \n", message.clientId)
 						}
 					}
 
@@ -253,7 +230,7 @@ func (self *Appartement) ReceiveMessage() {
 			case "heartbeat":
 				{
 					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
-					fmt.Printf("message:heartbeat:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
+					fmt.Printf("message:heartbeat:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.clientId)
 					key := message.GetRowKey()
 					columnFamilyName := "beat"
 					mut := bigtable.NewMutation()
@@ -261,39 +238,39 @@ func (self *Appartement) ReceiveMessage() {
 					timestamp := bigtable.Time(t)
 					mut.Set(columnFamilyName, "heartbeat"+message.Key, timestamp, []byte(fmt.Sprintf("%v", message.Payload)))
 					if err := self.tablePresence.Apply(ctx, key, mut); err != nil {
-						fmt.Errorf("%s:heartbeat:error %v \n", message.client.id, err.Error())
+						fmt.Errorf("%s:heartbeat:error %v \n", message.clientId, err.Error())
 						continue
 					}
 				}
 			case "unsubscribe":
 				{
-					fmt.Printf("message:heartbeat:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
-					delete(message.client.subscriptions, message.GetRowKey())
-					delete(self.subscriptions[message.GetRowKey()], message.client.id)
+					fmt.Printf("message:heartbeat:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.clientId)
+					//delete(message.client.subscriptions, message.GetRowKey())
+					self.subscriptions.Delete(message.GetRowKey(), message.clientId)
 				}
 			case "message":
 				{
 					fmt.Printf("message:new:%s:%s \n", message.Target.Channel, message.Target.Topic)
 					b, err := json.Marshal(message)
 					if err != nil {
-						fmt.Errorf("%s:message:error %v \n", message.client.id, err.Error())
+						fmt.Errorf("%s:message:error %v \n", message.clientId, err.Error())
 						continue
 					}
-					for _, e := range self.subscriptions[message.GetRowKey()] {
-						e.send <- b
+					for _, e := range self.subscriptions.Get(message.GetRowKey()) {
+						self.clients.Get(e).send <- b
 					}
 				}
 			case "broadcast":
 				{
 					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
-					fmt.Printf("message:broadcast:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
+					fmt.Printf("message:broadcast:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.clientId)
 					key := message.GetRowKey()
 					row, err := self.table.ReadRow(ctx, key, bigtable.RowFilter(
 						bigtable.ChainFilters(
 							bigtable.TimestampRangeFilter(time.Now(), time.Now().Add(time.Minute*20)),
 							bigtable.LatestNFilter(1))))
 					if err != nil {
-						fmt.Errorf("%s:broadcast:error %v \n", message.client.id, err.Error())
+						fmt.Errorf("%s:broadcast:error %v \n", message.clientId, err.Error())
 						continue
 					}
 					for _, apt := range row {

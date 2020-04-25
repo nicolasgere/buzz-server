@@ -11,11 +11,11 @@ type TargetV2 struct {
 }
 
 type MessageV2 struct {
-	Type    string      `json:"type"`
-	Target  TargetV2    `json:"target"`
-	Payload interface{} `json:"payload"`
-	Key     string      `json:"key"`
-	client  *Client
+	Type     string      `json:"type"`
+	Target   TargetV2    `json:"target"`
+	Payload  interface{} `json:"payload"`
+	Key      string      `json:"key"`
+	clientId string
 }
 
 func (self *MessageV2) GetRowKey() (r string) {
