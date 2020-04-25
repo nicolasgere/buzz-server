@@ -1,8 +1,8 @@
 package main
 
 import (
+	"buzz/core"
 	"buzz/migration"
-	"buzz/model"
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -22,7 +22,7 @@ import (
 func main() {
 	migration.Migrate()
 	id := ksuid.New()
-	apt := model.Appartement{
+	apt := core.Appartement{
 		Id:    "apt-" + id.String(),
 		Queue: "apt-" + id.String(),
 	}

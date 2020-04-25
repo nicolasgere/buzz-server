@@ -1,4 +1,4 @@
-package model
+package core
 
 import (
 	"github.com/segmentio/fasthash/fnv1a"
