@@ -50,6 +50,7 @@ func (c *Client) readPump(ctx context.Context, chanErr chan error) {
 		errMarshal := json.Unmarshal(data1, &message)
 		if errMarshal != nil {
 			fmt.Println(err.Error())
+			continue
 		}
 		message.clientId = c.id
 		c.receive <- &message

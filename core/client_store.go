@@ -34,7 +34,6 @@ func (self *ClientStore) Runner() {
 			fmt.Printf("%s:register \n", client.id)
 			self.clients[client.id] = client
 		case query := <-self.getChan:
-			fmt.Printf("%s:get \n", query.id)
 			val, ok := self.clients[query.id]
 			if ok {
 				query.response <- val

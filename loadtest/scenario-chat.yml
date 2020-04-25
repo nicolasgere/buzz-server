@@ -1,0 +1,25 @@
+config:
+  target: "ws://localhost:8080/ws"
+  phases:
+    - duration: 100
+      arrivalRate: 1
+scenarios:
+  - engine: "ws"
+    flow:
+#      - send:
+#          type: subscription
+#          target:
+#            channel: chat
+#            topic: test
+#          payload:
+#            data: ""
+      - loop:
+        - send:
+              type: message
+              target:
+                  channel: chat
+                  topic: test
+              payload:
+                data: "eyJ1c2VybmFtZSI6InRlc3QiLCAibWVzc2FnZSI6ImhlbGxvIHdvcmxkIn0="
+        - think: 1
+        count: 100
