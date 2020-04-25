@@ -54,7 +54,6 @@ func (c *Client) readPump(ctx context.Context, chanErr chan error) {
 		if err != nil {
 			break
 		}
-
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(d)
 		data1 := bytes.TrimSpace(bytes.Replace(buf.Bytes(), newline, space, -1))
@@ -79,7 +78,6 @@ L:
 		select {
 		case <-time.After(20 * time.Second):
 			ctxTimeout, _ := context.WithTimeout(ctx, time.Second*15)
-
 			err = c.conn.Ping(ctxTimeout)
 			if err == nil {
 				fmt.Printf("%s:client:ping:ok \n", c.id)

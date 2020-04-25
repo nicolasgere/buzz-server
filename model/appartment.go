@@ -52,7 +52,6 @@ func (self *Appartement) InitBigTable() {
 		panic("Could not create data operations client: " + err.Error())
 	}
 	self.table = bigtable.Open("buzz")
-
 	self.tablePresence = bigtable.Open("heartbeat")
 }
 
@@ -172,12 +171,11 @@ func (self *Appartement) ReceiveMessage() {
 	for {
 		select {
 		case message := <-self.incoming:
-
 			switch message.Type {
 			case "subscribe":
 				{
 					if message.Target.Topic == "" || message.Target.Channel == "" {
-						break
+						continue
 					}
 					fmt.Printf("message:subscribe:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
 					message.client.subscriptions[message.GetRowKey()] = true
@@ -201,7 +199,7 @@ func (self *Appartement) ReceiveMessage() {
 				{
 					ctx, _ := context.WithTimeout(ctxBackground, time.Second*2)
 					fmt.Printf("message:presence:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.client.id)
-					var data []string
+					data := []string{}
 					key := message.GetRowKey()
 					v, exist := self.cache.Get(key)
 					if exist {
@@ -261,7 +259,7 @@ func (self *Appartement) ReceiveMessage() {
 					mut := bigtable.NewMutation()
 					t := time.Now().Add(15 * time.Second)
 					timestamp := bigtable.Time(t)
-					mut.Set(columnFamilyName, "heartbeat"+message.Key, timestamp, []byte(message.Payload))
+					mut.Set(columnFamilyName, "heartbeat"+message.Key, timestamp, []byte(fmt.Sprintf("%v", message.Payload)))
 					if err := self.tablePresence.Apply(ctx, key, mut); err != nil {
 						fmt.Errorf("%s:heartbeat:error %v \n", message.client.id, err.Error())
 						continue
@@ -275,7 +273,7 @@ func (self *Appartement) ReceiveMessage() {
 				}
 			case "message":
 				{
-					fmt.Printf("message:new:%s:%s %s \n", message.Target.Channel, message.Target.Topic, message.Payload)
+					fmt.Printf("message:new:%s:%s \n", message.Target.Channel, message.Target.Topic)
 					b, err := json.Marshal(message)
 					if err != nil {
 						fmt.Errorf("%s:message:error %v \n", message.client.id, err.Error())

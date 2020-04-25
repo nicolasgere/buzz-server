@@ -21,7 +21,6 @@ import (
 
 func main() {
 	migration.Migrate()
-
 	id := ksuid.New()
 	apt := model.Appartement{
 		Id:    "apt-" + id.String(),
@@ -43,7 +42,7 @@ func main() {
 			fmt.Println(err.Error())
 			return
 		}
-		defer conn.Close(websocket.StatusInternalError, "the sky is falling")
+		//defer conn.Close(websocket.StatusInternalError, "the sky is falling")
 		err = apt.RegisterClient(conn, r.Context())
 	})
 	router.HandleFunc("/message/{channel}/{topic}", func(w http.ResponseWriter, r *http.Request) {
