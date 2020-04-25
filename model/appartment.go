@@ -121,12 +121,10 @@ func (self *Appartement) RegisterRoom(m Subscribe, clientId string) (err error) 
 
 func (self *Appartement) RegisterClient(conn *websocket.Conn, ctx context.Context) (err error) {
 	client := &Client{
-		id:            ksuid.New().String(),
-		receive:       self.incoming,
-		conn:          conn,
-		send:          make(chan []byte),
-		lastPing:      time.Now(),
-		subscriptions: map[string]bool{},
+		id:      ksuid.New().String(),
+		receive: self.incoming,
+		conn:    conn,
+		send:    make(chan []byte),
 	}
 	self.clients.Add(client)
 	chanErr := make(chan error)
@@ -137,6 +135,8 @@ func (self *Appartement) RegisterClient(conn *websocket.Conn, ctx context.Contex
 	fmt.Printf("%s:client:connected \n", client.id)
 	err = <-chanErr
 	self.clients.Delete(client.id)
+	self.subscriptions.DeleteClient(client.id)
+
 	if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
 		fmt.Printf("%s:client:close:normal \n", client.id)
 		return

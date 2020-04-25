@@ -15,16 +15,19 @@ type SubscriptionQuery struct {
 }
 
 type SubscriptionStore struct {
-	subscriptions map[string]map[string]bool
-	clients       map[string][]string
-	addChan       chan (SubscriptionQuery)
-	deleteChan    chan (SubscriptionQuery)
-	getChan       chan (GetSubscriptionQuery)
+	subscriptions    map[string]map[string]bool
+	clients          map[string][]string
+	addChan          chan (SubscriptionQuery)
+	deleteChan       chan (SubscriptionQuery)
+	deleteClientChan chan (string)
+
+	getChan chan (GetSubscriptionQuery)
 }
 
 func (self *SubscriptionStore) Init() {
 	self.addChan = make(chan (SubscriptionQuery))
 	self.deleteChan = make(chan (SubscriptionQuery))
+	self.deleteClientChan = make(chan (string))
 	self.getChan = make(chan GetSubscriptionQuery)
 	self.subscriptions = map[string]map[string]bool{}
 	self.clients = map[string][]string{}
@@ -34,11 +37,25 @@ func (self *SubscriptionStore) Init() {
 func (self *SubscriptionStore) Runner() {
 	for {
 		select {
+		case id := <-self.deleteClientChan:
+			fmt.Printf("%s:unregister_client \n", id)
+			val, ok := self.clients[id]
+			if ok {
+				for _, e := range val {
+					delete(self.subscriptions[e], id)
+					if len(self.subscriptions[e]) == 0 {
+						delete(self.subscriptions, e)
+					}
+				}
+			}
 		case query := <-self.deleteChan:
 			fmt.Printf("%s:unregister \n", query.idClient)
 			val, ok := self.subscriptions[query.rowSubscription]
 			if ok {
 				delete(val, query.idClient)
+				if len(self.subscriptions[query.rowSubscription]) == 0 {
+					delete(self.subscriptions, query.rowSubscription)
+				}
 			}
 		case query := <-self.addChan:
 			fmt.Printf("%s:register \n", query.idClient)
@@ -81,6 +98,9 @@ func (self *SubscriptionStore) Delete(rowSubscription string, idClient string) {
 		idClient:        idClient,
 		rowSubscription: rowSubscription,
 	}
+}
+func (self *SubscriptionStore) DeleteClient(idClient string) {
+	self.deleteClientChan <- idClient
 }
 func (self *SubscriptionStore) Get(id string) []string {
 	query := GetSubscriptionQuery{
